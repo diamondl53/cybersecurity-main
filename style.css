@@ -2,69 +2,210 @@
     --bg-color: #1a1a2e;
     --card-color: #2c2c54;
     --text-color: #f4f4f4;
-    --primary-color: #4CAF50;
+    --primary-color: #4CAF50; /* Green for success/action */
     --hover-color: #61b363;
     --input-bg: #3e3e68;
     --border-color: #5d5d81;
+    --danger-color: #ff3333;
 }
 
 body {
-    font-family: 'Segoe UI', sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
-    margin: 0; padding: 20px;
-    display: flex; justify-content: center;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
 }
 
-.container { width: 100%; max-width: 1000px; }
+.container {
+    width: 100%;
+    max-width: 900px;
+}
 
-h1 { text-align: center; color: var(--primary-color); border-bottom: 2px solid var(--primary-color); padding-bottom: 10px; }
+h1 {
+    text-align: center;
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
 
-.tabs { display: flex; justify-content: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); }
+/* --- Tabs Navigation --- */
+.tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
 
 .tab-button {
-    background-color: var(--card-color); color: var(--text-color);
-    border: none; padding: 12px 20px; cursor: pointer;
-    border-radius: 8px 8px 0 0; margin-right: 5px;
+    background-color: var(--card-color);
+    color: var(--text-color);
+    border: none;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 15px;
+    border-radius: 8px 8px 0 0;
+    margin-right: 5px;
+    transition: background-color 0.3s;
 }
 
-.tab-button.active { background-color: var(--primary-color); color: var(--bg-color); font-weight: bold; }
+.tab-button:hover:not(.active) {
+    background-color: #3e3e68;
+}
 
-.tab-content { display: none; }
-.tab-content.active { display: block; }
+.tab-button.active {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    font-weight: bold;
+}
 
-.card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.card { background-color: var(--card-color); padding: 20px; border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-.card.full-width { grid-column: 1 / -1; }
+/* --- Content Visibility --- */
+.tab-content {
+    display: none;
+}
 
-label { display: block; margin-top: 15px; font-size: 0.9em; }
+.tab-content.active {
+    display: block;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- Cards & Grid Layout --- */
+.card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.card {
+    background-color: var(--card-color);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+/* --- Forms & Inputs --- */
+label {
+    display: block;
+    margin-top: 15px;
+    font-weight: bold;
+    font-size: 0.85em;
+    color: var(--text-color);
+}
 
 input, textarea {
-    width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box;
-    border: 1px solid var(--border-color); border-radius: 6px;
-    background-color: var(--input-bg); color: var(--text-color); font-family: monospace;
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: white;
+    font-family: 'Courier New', Courier, monospace;
+    box-sizing: border-box;
+    font-size: 0.9em;
 }
 
+input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* --- Buttons --- */
 .action-button {
-    padding: 12px 20px; border: none; border-radius: 6px;
-    cursor: pointer; font-weight: bold; margin-top: 10px; width: 100%;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 15px;
+    transition: 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
-.primary-button { background-color: var(--primary-color); color: var(--bg-color); }
+.primary-button {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+}
 
+.primary-button:hover {
+    background-color: var(--hover-color);
+}
+
+/* --- Display Areas (Pre-formatted text) --- */
 pre {
-    background-color: var(--input-bg); padding: 15px; border-radius: 6px;
-    white-space: pre-wrap; word-break: break-all;
-    max-height: 300px; overflow-y: auto; font-family: monospace; border: 1px dashed var(--border-color);
+    background: #161625;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px dashed var(--border-color);
+    font-family: 'Courier New', Courier, monospace;
+    color: #00ff41; /* "Matrix" green for code views */
 }
 
-.hidden { display: none; }
+/* --- Specific UI Elements --- */
+.tip {
+    font-size: 0.8em;
+    color: #999;
+    font-style: italic;
+    margin-top: 5px;
+}
 
+.balance-info {
+    color: #ffcc00; /* Yellow for attention */
+    font-weight: bold;
+    margin: 10px 0;
+    font-size: 1.1em;
+}
+
+/* --- Notifications --- */
 #notification {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    padding: 15px 30px; border-radius: 8px; z-index: 1000;
-    opacity: 0; transition: opacity 0.5s; pointer-events: none;
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 30px;
+    border-radius: 8px;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.5s, transform 0.5s;
+    pointer-events: none;
+    font-weight: bold;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
 }
-#notification.show { opacity: 1; }
-#notification.success { background-color: var(--primary-color); color: white; }
-#notification.error { background-color: #ff3333; color: white; }
+
+#notification.show {
+    opacity: 1;
+}
+
+#notification.success {
+    background: var(--primary-color);
+    color: black;
+}
+
+#notification.error {
+    background: var(--danger-color);
+    color: white;
+}
+
+/* --- Responsive Adjustments --- */
+@media (max-width: 768px) {
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+}

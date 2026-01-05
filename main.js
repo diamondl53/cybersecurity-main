@@ -1,5 +1,6 @@
 // --- CONFIGURATION ---
-const ADMIN_PASSWORD = "ADMIN1234"; 
+const ADMIN_PASSWORD = "ADMIN1234"; // Your hardcoded password
+let isAdminAuthenticated = false;   // Session variable (resets on refresh)
 
 const firebaseConfig = {
     apiKey: "AIzaSyAMyTn2KYF9A5pd4FsDjYoOMVzZiGDS5mw",
@@ -30,7 +31,7 @@ async function sha256(data) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// --- BLOCKCHAIN LOGIC ---
+// --- BLOCKCHAIN CLASSES ---
 class Transaction {
     constructor(sender, recipient, amount, signature = "") {
         this.sender = sender;
@@ -39,8 +40,12 @@ class Transaction {
         this.signature = signature;
     }
     async sign(privateKey) {
-        if (this.sender === 'SYSTEM') this.signature = "SYSTEM_TX_NO_SIGNATURE";
-        else this.signature = await sha256(privateKey + stringify({sender: this.sender, recipient: this.recipient, amount: this.amount}));
+        if (this.sender === 'SYSTEM') {
+            this.signature = "SYSTEM_TX_NO_SIGNATURE";
+        } else {
+            const msg = stringify({sender: this.sender, recipient: this.recipient, amount: this.amount});
+            this.signature = await sha256(privateKey + msg);
+        }
     }
 }
 
@@ -79,10 +84,14 @@ class Blockchain {
     }
 
     async save() {
-        await db.ref('blockchain').set({
-            chain: this.chain,
-            unconfirmed_transactions: this.unconfirmed_transactions
-        });
+        try {
+            await db.ref('blockchain').set({
+                chain: this.chain,
+                unconfirmed_transactions: this.unconfirmed_transactions
+            });
+        } catch (e) {
+            showNotification("Firebase Save Error", true);
+        }
     }
 
     recalculateBalances() {
@@ -90,7 +99,9 @@ class Blockchain {
         this.chain.forEach(block => {
             if (block.transactions) {
                 block.transactions.forEach(tx => {
-                    if (tx.sender !== "SYSTEM") this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
+                    if (tx.sender !== "SYSTEM") {
+                        this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
+                    }
                     this.balances[tx.recipient] = (this.balances[tx.recipient] || 0) + tx.amount;
                 });
             }
@@ -98,10 +109,13 @@ class Blockchain {
     }
 
     async mine() {
-        if (this.unconfirmed_transactions.length === 0) return null;
         const lastBlock = this.chain[this.chain.length - 1];
-        const newBlock = new Block(this.chain.length, this.unconfirmed_transactions, lastBlock.hash);
-        
+        const newBlock = new Block(
+            this.chain.length,
+            this.unconfirmed_transactions,
+            lastBlock ? lastBlock.hash : "0"
+        );
+
         const target = "0".repeat(this.difficulty);
         while (true) {
             newBlock.hash = await newBlock.computeHash();
@@ -118,7 +132,7 @@ class Blockchain {
 
 const bc = new Blockchain();
 
-// --- DATABASE LISTENERS ---
+// --- DATABASE LISTENER ---
 db.ref('blockchain').on('value', (snapshot) => {
     const data = snapshot.val();
     if (data && data.chain) {
@@ -137,76 +151,96 @@ async function initGenesis() {
     await bc.save();
 }
 
-// --- SYSTEM & ADMIN FUNCTIONS ---
+// --- ADMIN & AUTH FUNCTIONS ---
 function unlockSystem() {
-    if (document.getElementById('admin-pass-input').value === ADMIN_PASSWORD) {
-        document.getElementById('admin-login-section').classList.add('hidden');
-        document.getElementById('admin-controls-section').classList.remove('hidden');
+    const input = document.getElementById('admin-pass-input').value;
+    if (input === ADMIN_PASSWORD) {
+        isAdminAuthenticated = true;
+        renderAdminView();
         showNotification("Admin access granted.");
     } else {
         showNotification("Incorrect password!", true);
     }
 }
 
-async function wipeBlockchain() {
-    if (!confirm("DELETE EVERYTHING FOREVER?")) return;
-    showNotification("Wiping network...");
-    await db.ref('blockchain').remove();
-    await initGenesis();
-    showNotification("Network reset complete.");
+function renderAdminView() {
+    const loginSec = document.getElementById('admin-login-section');
+    const ctrlSec = document.getElementById('admin-controls-section');
+    if (isAdminAuthenticated) {
+        loginSec.classList.add('hidden');
+        ctrlSec.classList.remove('hidden');
+    } else {
+        loginSec.classList.remove('hidden');
+        ctrlSec.classList.add('hidden');
+    }
 }
 
-// --- ACTION FUNCTIONS ---
+async function wipeBlockchain() {
+    if (!isAdminAuthenticated) return;
+    if (confirm("DELETE EVERYTHING? This cannot be undone.")) {
+        showNotification("Wiping data...");
+        await db.ref('blockchain').remove();
+        await initGenesis();
+        showNotification("Network reset.");
+    }
+}
+
+async function mineBlock() {
+    if (!isAdminAuthenticated) return showNotification("Login as Admin to mine", true);
+    if (bc.unconfirmed_transactions.length === 0) return showNotification("Mempool is empty", true);
+    
+    showNotification("Mining block...");
+    const block = await bc.mine();
+    if (block) showNotification("Success! Mined Block #" + block.index);
+}
+
+// --- CORE ACTIONS ---
 async function sendTokens() {
     const priv = document.getElementById('send-priv').value.trim();
     const sender = document.getElementById('send-pub').value.trim();
     const recipient = document.getElementById('send-recipient').value.trim();
     const amount = parseFloat(document.getElementById('send-amount').value);
 
-    if (!priv || (bc.balances[sender] || 0) > amount) {
-        return showNotification("Invalid Keys or Insufficient Funds", true);
+    if (!priv || (bc.balances[sender] || 0) < amount) {
+        return showNotification("Invalid Keys or Low Balance", true);
     }
 
     const tx = new Transaction(sender, recipient, amount);
     await tx.sign(priv);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
-    showNotification("Transaction sent to Mempool!");
+    showNotification("Transaction added to Mempool.");
 }
 
 async function issueTokens() {
+    if (!isAdminAuthenticated) return;
     const recipient = document.getElementById('issue-recipient').value.trim();
     const amount = parseFloat(document.getElementById('issue-amount').value);
+    
     const tx = new Transaction("SYSTEM", recipient, amount);
     await tx.sign(null);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
-    showNotification("Tokens issued by System.");
+    showNotification("System tokens issued.");
 }
 
-async function mineBlock() {
-    if (bc.unconfirmed_transactions.length === 0) return showNotification("No transactions to mine!", true);
-    showNotification("Mining block...");
-    const block = await bc.mine();
-    if (block) showNotification("Success! Block #" + block.index + " mined.");
-}
-
-// --- UI UTILS ---
+// --- UI UPDATES ---
 function refreshUI() {
     bc.recalculateBalances();
     
-    let balText = 'Address | Balance\n' + '-'.repeat(30) + '\n';
+    // Balances
+    let balText = 'ADDR | BALANCE\n---\n';
     Object.keys(bc.balances).forEach(addr => {
-        if (bc.balances[addr] > 0) balText += `${addr.substring(0,10)}... | ${bc.balances[addr].toFixed(2)}\n`;
+        if (bc.balances[addr] > 0) {
+            balText += `${addr.substring(0,8)}... | ${bc.balances[addr].toFixed(2)}\n`;
+        }
     });
-    document.getElementById('balances-view').textContent = balText || "(No balances)";
+    document.getElementById('balances-view').textContent = balText;
 
-    let memText = "";
-    bc.unconfirmed_transactions.forEach(tx => {
-        memText += `${tx.sender.substring(0,8)} -> ${tx.recipient.substring(0,8)} [${tx.amount}]\n`;
-    });
-    document.getElementById('mempool-view').textContent = memText || "(Empty)";
+    // Mempool
+    document.getElementById('mempool-view').textContent = bc.unconfirmed_transactions.length + " Pending Transactions";
 
+    // Chain
     let chainText = "";
     bc.chain.slice().reverse().forEach(block => {
         chainText += `BLOCK #${block.index}\nHash: ${block.hash.substring(0,12)}...\n\n`;
@@ -217,15 +251,9 @@ function refreshUI() {
 function showTab(id) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-    
-    if (id !== 'issue') {
-        document.getElementById('admin-login-section').classList.remove('hidden');
-        document.getElementById('admin-controls-section').classList.add('hidden');
-        document.getElementById('admin-pass-input').value = "";
-    }
-
+    if (id === 'issue') renderAdminView();
     document.getElementById(id).classList.add('active');
-    event.currentTarget.classList.add('active');
+    if (event && event.currentTarget) event.currentTarget.classList.add('active');
 }
 
 function showNotification(msg, isErr = false) {
@@ -236,10 +264,15 @@ function showNotification(msg, isErr = false) {
 }
 
 function generateWallet() {
-    const priv = `PRIV-${Math.random().toString(36).substring(2).toUpperCase()}`;
-    const pub = `ADDR-${crypto.randomUUID().replaceAll('-', '').substring(0,12).toUpperCase()}`;
+    const priv = `PRIV-${Math.random().toString(36).substring(2,11).toUpperCase()}`;
+    const pub = `ADDR-${Math.random().toString(36).substring(2,11).toUpperCase()}`;
     document.getElementById('new-priv').value = priv;
     document.getElementById('new-pub').value = pub;
 }
 
-function refreshStatus() { refreshUI(); showNotification("Refreshed."); }
+function checkSenderBalance() {
+    const addr = document.getElementById('send-pub').value.trim();
+    document.getElementById('sender-balance').textContent = (bc.balances[addr] || 0).toFixed(2);
+}
+
+function refreshStatus() { refreshUI(); showNotification("UI Updated"); }
