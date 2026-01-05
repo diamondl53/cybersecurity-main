@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>₿ Python Blockchain Wallet</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>₿ Shared Python Blockchain</h1>
+       
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('status')">Status & Chain</button>
+            <button class="tab-button" onclick="showTab('wallet')">Wallet Generator</button>
+            <button class="tab-button" onclick="showTab('send')">Send Tokens</button>
+            <button class="tab-button" onclick="showTab('issue')">Issue (SYSTEM)</button>
+        </div>
+
+        <div id="status" class="tab-content active">
+            <div class="card-grid">
+                <div class="card full-width">
+                    <h3>Current Balances</h3>
+                    <pre id="balances-view">Connecting to Network...</pre>
+                </div>
+                <div class="card">
+                    <h3>Mempool (Pending TX)</h3>
+                    <pre id="mempool-view">(Empty)</pre>
+                    <button class="action-button primary-button" onclick="mineBlock()">Mine New Block</button>
+                </div>
+                <div class="card">
+                    <h3>Blockchain (Blocks)</h3>
+                    <pre id="chain-view">(Loading...)</pre>
+                    <button class="action-button" onclick="refreshStatus()">Force Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="wallet" class="tab-content">
+            <div class="card full-width">
+                <h3>Generate New Wallet (Key Pair)</h3>
+                <p class="tip">Save these keys securely! The Public Key is your address.</p>
+                <button class="action-button primary-button" onclick="generateWallet()">Generate New Key Pair</button>
+                <label for="new-priv">Private Key (Hex)</label>
+                <textarea id="new-priv" rows="3" readonly></textarea>
+                <label for="new-pub">Public Key (Hex - Your Address)</label>
+                <textarea id="new-pub" rows="3" readonly></textarea>
+            </div>
+        </div>
+
+        <div id="send" class="tab-content">
+            <div class="card full-width">
+                <h3>Create & Send Signed Transaction</h3>
+                <label for="send-priv">Sender Private Key</label>
+                <textarea id="send-priv" rows="3"></textarea>
+                <label for="send-pub">Sender Public Key</label>
+                <textarea id="send-pub" rows="3"></textarea>
+                <p class="balance-info">Balance: <span id="sender-balance">0.00</span></p>
+                <label for="send-recipient">Recipient Public Key</label>
+                <textarea id="send-recipient" rows="3"></textarea>
+                <label for="send-amount">Amount</label>
+                <input type="number" id="send-amount" min="0.01" step="0.01">
+                <button class="action-button primary-button" onclick="sendTokens()">Sign & Send</button>
+            </div>
+        </div>
+
+        <div id="issue" class="tab-content">
+            <div class="card full-width">
+                <h3>Issue Tokens (System Function)</h3>
+                <label for="issue-recipient">Recipient Address</label>
+                <textarea id="issue-recipient" rows="3"></textarea>
+                <label for="issue-amount">Amount</label>
+                <input type="number" id="issue-amount" min="0.01" step="0.01">
+                <button class="action-button primary-button" onclick="issueTokens()">Add to Mempool</button>
+            </div>
+        </div>
+
+        <div id="notification" class="hidden"></div>
+    </div>
+   
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    
+    <script src="main.js"></script>
+</body>
+</html>
