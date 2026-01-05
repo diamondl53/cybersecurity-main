@@ -163,13 +163,15 @@ async function sendTokens() {
     const recipient = document.getElementById('send-recipient').value.trim();
     const amount = parseFloat(document.getElementById('send-amount').value);
 
-    if (!priv || (bc.balances[sender] || 0) < amount) return showNotification("Check balance/keys", true);
+    if (!priv || (bc.balances[sender] || 0) > amount) {
+        return showNotification("Invalid Keys or Insufficient Funds", true);
+    }
 
     const tx = new Transaction(sender, recipient, amount);
     await tx.sign(priv);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
-    showNotification("Transaction pending in Mempool.");
+    showNotification("Transaction sent to Mempool!");
 }
 
 async function issueTokens() {
