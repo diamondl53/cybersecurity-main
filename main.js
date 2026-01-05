@@ -133,7 +133,7 @@ function refreshUI() {
     bc.recalculateBalances();
     // Balances
     let bView = "ADDR | BAL\n---\n";
-    Object.keys(bc.balances).forEach(a => { if(bc.balances[a]>0) bView += `${a} | ${bc.balances[a].toFixed(2)}\n`});
+    Object.keys(bc.balances).forEach(a => { bView += `${a} | ${bc.balances[a].toFixed(2)}\n`});
     document.getElementById('balances-view').textContent = bView || "(No balances)";
 
     // Mempool (Privacy Logic)
@@ -160,7 +160,9 @@ async function sendTokens() {
     const s = document.getElementById('send-pub').value.trim();
     const r = document.getElementById('send-recipient').value.trim();
     const a = parseFloat(document.getElementById('send-amount').value);
-    if (!p || (bc.balances[s] || 0) < a) return showNotification("Check balance/keys", true);
+    if (!p || (bc.balances[s] || 0) < a) return showNotification("Insufficient balance/Incorrect keys", true);
+
+    if (a <= 0) return showNotification("Amount must be greater than 0", true)
     const tx = new Transaction(s, r, a);
     await tx.sign(p);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
