@@ -106,6 +106,12 @@
                     <input type="number" id="global-balance-amount" placeholder="Enter amount">
                     <button class="action-button primary-button" onclick="setGlobalBalances()">Update All Balances</button>
                 </div>
+
+                <div style="border: 1px solid #5d5d81; padding: 15px; border-radius: 8px; margin-top: 10px;">
+                    <h4>Registry Management</h4>
+                    <p style="font-size: 0.8em; color: #bbb;">Remove wallets with 0 balance to prevent database spam.</p>
+                    <button class="action-button" onclick="cleanupRegistry()" style="background-color: #815d5d;">Purge Empty Wallets</button>
+                </div>
                 
                 <div style="background-color: #442222; padding: 15px; border-radius: 8px; border: 1px solid var(--danger-color);">
                     <h4>System Reset</h4>

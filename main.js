@@ -45,15 +45,32 @@ class Blockchain {
     constructor() { this.difficulty = 3; this.unconfirmed_transactions = []; this.chain = []; this.balances = {}; }
     sync(data) { this.chain = data.chain || []; this.unconfirmed_transactions = data.unconfirmed_transactions || []; this.recalculateBalances(); }
     async save() { await db.ref('blockchain').set({ chain: this.chain, unconfirmed_transactions: this.unconfirmed_transactions }); }
-    recalculateBalances() {
-        this.balances = {};
-        this.chain.forEach(b => {
-            if (b.transactions) b.transactions.forEach(tx => {
-                if (tx.sender !== "SYSTEM") this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
-                this.balances[tx.recipient] = (this.balances[tx.recipient] || 0) + tx.amount;
-            });
+    recalculateBalances(registry = null) {
+    this.balances = {};
+    
+    // Loop through every transaction in history
+    this.chain.forEach(b => {
+        if (b.transactions) b.transactions.forEach(tx => {
+            // Only track the sender/recipient if the registry is null 
+            // OR if the address exists in the provided registry
+            if (tx.sender !== "SYSTEM") {
+                this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
+            }
+            this.balances[tx.recipient] = (this.balances[tx.recipient] || 0) + tx.amount;
         });
+    });
+
+    // --- THE FIX: Filter out purged addresses ---
+    if (registry) {
+        const filteredBalances = {};
+        Object.keys(registry).forEach(addr => {
+            if (this.balances[addr] !== undefined) {
+                filteredBalances[addr] = this.balances[addr];
+            }
+        });
+        this.balances = filteredBalances;
     }
+}
     async mine() {
         const last = this.chain[this.chain.length - 1];
         const b = new Block(this.chain.length, this.unconfirmed_transactions, last.hash);
@@ -141,37 +158,56 @@ async function initGenesis() {
     await bc.save();
 }
 
-function refreshUI() {
-    bc.recalculateBalances(); // [cite: 14]
+async function refreshUI() {
+    try {
+        // 1. Get registry snapshot without blocking the whole script
+        const snapshot = await db.ref('wallet_registry').once('value');
+        const registry = snapshot.val() || {};
 
-    // Update the main Balances table to show "Available" balances 
-    let bView = "ADDR | AVAILABLE BAL\n---\n";
-    Object.keys(bc.balances).forEach(a => { 
-        const avail = getAvailableBalance(a);
-        bView += `${a} | ${avail.toFixed(2)}\n`;
-    });
-    document.getElementById('balances-view').textContent = bView || "(No balances)";
+        // 2. Recalculate balances using that registry
+        bc.recalculateBalances(registry);
 
-    // Update Mempool View [cite: 31, 33]
-    const memElement = document.getElementById('mempool-view');
-    const count = bc.unconfirmed_transactions.length;
-    if (isAdminAuthenticated) {
-        let memText = `PENDING: ${count}\n\n`;
-        bc.unconfirmed_transactions.forEach((tx, i) => {
-            memText += `[${i+1}] ${tx.sender} -> ${tx.recipient} (${tx.amount})\n`;
+        // 3. Update Balances View
+        let bView = "ADDR | AVAILABLE BAL\n---\n";
+        Object.keys(bc.balances).forEach(a => { 
+            const avail = getAvailableBalance(a);
+            bView += `${a} | ${avail.toFixed(2)}\n`;
         });
-        memElement.textContent = memText || "(Empty)";
-    } else {
-        memElement.textContent = `Mempool: ${count} transaction(s) waiting.`;
-    }
+        document.getElementById('balances-view').textContent = bView || "(No balances)";
 
-    // Update Chain View [cite: 35]
-    let cView = "";
-    bc.chain.slice().reverse().forEach(b => cView += `BLOCK #${b.index}\nHash: ${b.hash.substring(0,10)}...\n\n`);
-    document.getElementById('chain-view').textContent = cView;
-    
-    // Auto-update the balance in the "Send" tab if an address is already entered [cite: 45]
-    checkSenderBalance();
+        // 4. Update Mempool View
+        const memElement = document.getElementById('mempool-view');
+        if (memElement) {
+            const count = bc.unconfirmed_transactions.length;
+            if (isAdminAuthenticated) {
+                let memText = `PENDING: ${count}\n\n`;
+                bc.unconfirmed_transactions.forEach((tx, i) => {
+                    memText += `[${i+1}] ${tx.sender} -> ${tx.recipient} (${tx.amount})\n`;
+                });
+                memElement.textContent = memText || "(Empty)";
+            } else {
+                memElement.textContent = `Mempool: ${count} transaction(s) waiting.`;
+            }
+        }
+
+        // 5. Update Chain View (The 'Blocks')
+        const chainElement = document.getElementById('chain-view');
+        if (chainElement) {
+            let cView = "";
+            // Reverse so newest blocks are on top
+            [...bc.chain].reverse().forEach(b => {
+                cView += `BLOCK #${b.index}\nHash: ${b.hash.substring(0,10)}...\nTransactions: ${b.transactions ? b.transactions.length : 0}\n\n`;
+            });
+            chainElement.textContent = cView || "Genesis Block only.";
+        }
+        
+        // 6. Update Admin Table
+        updateAdminKeyTable(registry);
+        checkSenderBalance();
+
+    } catch (err) {
+        console.error("UI Refresh Error:", err);
+    }
 }
 
 async function sendTokens() {
@@ -179,41 +215,54 @@ async function sendTokens() {
     const s = document.getElementById('send-pub').value.trim();
     const r = document.getElementById('send-recipient').value.trim();
     const a = parseFloat(document.getElementById('send-amount').value);
+
     if (!p || !s || !r || isNaN(a)) {
-        return showNotification("Error: All fields (Private Key, Sender, Recipient, Amount) must be filled!", true);
+        return showNotification("Error: All fields must be filled!", true);
     }
 
     try {
-
         const snapshot = await db.ref('wallet_registry').child(s).once('value');
-        const officialPrivKey = snapshot.val();
+        const officialData = snapshot.val();
 
-        if (!(r in bc.balances)) {
-            return showNotification("Recipient address does not exist on the network!", true);
+        if (!officialData) {
+            return showNotification("Security Error: Address not registered!", true);
         }
 
-        if (p !== officialPrivKey) {
+        // --- THE FIX START ---
+        // If officialData is an object, get the .privateKey property. 
+        // If it's just a string (old format), use it directly.
+        const actualKey = (typeof officialData === 'object') 
+            ? officialData.privateKey 
+            : officialData;
+        
+        if (p !== actualKey) {
             return showNotification("Private key is incorrect!", true);
         }
+        // --- THE FIX END ---
 
         const available = getAvailableBalance(s);
-        
         if (available < a) {
-            return showNotification(`Insufficient funds! You have ${available.toFixed(2)} available (some may be pending in mempool).`, true);
+            return showNotification(`Insufficient funds! Available: ${available.toFixed(2)}`, true);
         }
 
-        if (a <= 0) return showNotification("Amount must be a number greater than 0!", true);
+        // Check if recipient exists in registry (not just balances)
+        const recipientSnapshot = await db.ref('wallet_registry').child(r).once('value');
+        if (!recipientSnapshot.exists()) {
+            return showNotification("Recipient address does not exist!", true);
+        }
 
         const tx = new Transaction(s, r, a);
         await tx.sign(p);
+        
         bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
         await bc.save();
+        
         showNotification("Sent to Mempool");
         refreshUI();
     }
     catch (error) {
-        console.error("Firebase Error:", error);
-        showNotification("Database communication error.", true);
+        console.error("Auth Error:", error);
+        showNotification("Transaction failed.", true);
     }
 }
 
@@ -222,19 +271,34 @@ async function issueTokens() {
     const r = document.getElementById('issue-recipient').value.trim();
     const a = parseFloat(document.getElementById('issue-amount').value);
 
-    if (!(r in bc.balances)){
-        const priv = "PRIV-"+Math.random().toString(36).substr(2,9).toUpperCase();
-        document.getElementById('new-priv').value = priv;
-        document.getElementById('new-pub').value = r;
-        db.ref('wallet_registry').child(r).set(priv);
+    if (isNaN(a) || a <= 0) return showNotification("Invalid amount", true);
+
+    // 1. If recipient is new, register them with a key and verify them
+    const snapshot = await db.ref('wallet_registry').child(r).once('value');
+    if (!snapshot.exists()) {
+        const priv = "PRIV-" + Math.random().toString(36).substr(2, 9).toUpperCase();
+        // We save as an object to match our new "verified" structure
+        await db.ref('wallet_registry').child(r).set({
+            privateKey: priv,
+            verified: true // Issued accounts are auto-verified
+        });
+        showNotification(`New wallet created for ${r}`);
     }
+
+    // 2. Create and sign the transaction
     const tx = new Transaction("SYSTEM", r, a);
     await tx.sign(null);
+    
+    // 3. Add to mempool and save
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
+    
+    // 4. Mine it immediately (as per your current logic)
     await bc.mine();
-    showNotification("Issued tokens.");
-    checkSenderBalance();
+    
+    // 5. IMPORTANT: Wait for the refresh
+    await refreshUI();
+    showNotification(`Issued ${a} tokens to ${r}`);
 }
 
 function showTab(id) {
@@ -278,6 +342,8 @@ function generateWallet() {
     document.getElementById('new-priv').value = priv;
     document.getElementById('new-pub').value = pub;
 
+
+    db.ref('wallet_registry').child(pub).set(priv);
     // Auto-fill the Send Tab fields for convenience
     document.getElementById('send-priv').value = priv;
     document.getElementById('send-pub').value = pub;
@@ -303,8 +369,6 @@ async function claimFaucet() {
     const pub = document.getElementById('new-pub').value.trim();
     const priv = document.getElementById('new-priv').value.trim();
 
-    await db.ref('wallet_registry').child(pub).set(priv);
-
     // Create system transaction using existing logic [cite: 40]
     const tx = new Transaction("SYSTEM", r, 1000);
     await tx.sign(null); // [cite: 6]
@@ -317,6 +381,11 @@ async function claimFaucet() {
     const fBtn = document.getElementById('faucet-btn');
     fBtn.disabled = true;
     fBtn.textContent = "Claimed (1 per session)";
+
+    await db.ref('wallet_registry').child(pub).update({
+        verified: true,
+        privateKey: priv // Store as object now for more data
+    });
     
     showNotification("1,000 tokens sent to Mempool!"); // [cite: 43]
 }
@@ -329,23 +398,17 @@ async function viewAllKeys() {
     const display = document.getElementById('admin-keys-view');
     display.classList.toggle('hidden');
 
-    // If we are opening the tab and not already watching, start the listener
-    if (!display.classList.contains('hidden') && !isWatchingKeys) {
-        isWatchingKeys = true;
+    // If opening the panel, render the data immediately
+    if (!display.classList.contains('hidden')) {
+        updateAdminKeyTable();
         
-        // Setting up a real-time listener on the wallet_registry node
-        db.ref('wallet_registry').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (!data) {
-                display.textContent = "Registry is empty. Generate a wallet to start!";
-            } else {
-                let text = "PUBLIC ADDRESS| PRIVATE KEY\n" + "-".repeat(45) + "\n";
-                for (let pub in data) {
-                    text += `${pub} | ${data[pub]}\n`;
-                }
-                display.textContent = text;
-            }
-        });
+        // Setup a listener so it updates if new wallets are created while open
+        if (!isWatchingKeys) {
+            isWatchingKeys = true;
+            db.ref('wallet_registry').on('value', () => {
+                updateAdminKeyTable();
+            });
+        }
     }
 }
 
@@ -386,3 +449,94 @@ function getAvailableBalance(address) {
     
     return balance;
 }
+
+async function cleanupRegistry() {
+    if (!isAdminAuthenticated) return showNotification("Admin Auth Required", true);
+    
+    showNotification("Cleaning Registry and Ledger...");
+
+    // 1. Get the latest Registry and Ledger data
+    const regSnapshot = await db.ref('wallet_registry').once('value');
+    const registry = regSnapshot.val();
+    
+    if (!registry) return showNotification("Registry is empty.");
+
+    let purgeCount = 0;
+
+    for (let addr in registry) {
+        const balance = bc.balances[addr] || 0;
+        const accountData = registry[addr];
+        
+        // Check for pending activity
+        const isPending = bc.unconfirmed_transactions.some(tx => tx.sender === addr || tx.recipient === addr);
+
+        // THE RULES FOR PURGING:
+        // - Balance must be EXACTLY 0 (Negative balances are kept for tracking)
+        // - Must NOT be verified (Never claimed faucet)
+        // - Must NOT have a pending transaction
+        if (balance === 0 && !accountData.verified && !isPending) {
+            
+            // A. Remove from Registry (Stops them from being able to login/send)
+            await db.ref('wallet_registry').child(addr).remove();
+            
+            // B. Remove from Blockchain State (Makes them vanish from "Current Balances")
+            // We delete the key from the local object
+            delete bc.balances[addr];
+            
+            purgeCount++;
+        }
+    }
+
+    // 2. CRITICAL: Sync the deleted balances back to Firebase
+    // If we don't do this, other users will still see the old balance list
+    await db.ref('blockchain/balances').set(bc.balances);
+
+    showNotification(`Purge Complete: ${purgeCount} wallets removed from the entire system.`);
+    
+    // 3. Update the display for the admin immediately
+    refreshUI();
+}
+
+function updateAdminKeyTable(passedRegistry = null) {
+    const display = document.getElementById('admin-keys-view');
+    if (!display || display.classList.contains('hidden')) return;
+
+    // Use the data passed from refreshUI, or fetch it if called standalone
+    if (passedRegistry) {
+        renderTable(passedRegistry);
+    } else {
+        db.ref('wallet_registry').once('value', (snapshot) => {
+            renderTable(snapshot.val() || {});
+        });
+    }
+
+    function renderTable(data) {
+        let text = "PUBLIC ADDRESS        | BAL      | VERIFIED | PRIVATE KEY\n" + "-".repeat(70) + "\n";
+        
+        for (let addr in data) {
+            const entry = data[addr];
+            // Use the balance that bc.recalculateBalances just created
+            const balance = bc.balances[addr] || 0; 
+
+            let priv = (typeof entry === 'object') ? (entry.privateKey || "N/A") : entry;
+            let verifiedStatus = (typeof entry === 'object' && entry.verified) ? "✅" : "❌";
+
+            const addrPart = addr.padEnd(21, ' ');
+            const balPart = balance.toFixed(2).toString().padEnd(8, ' ');
+            const verPart = verifiedStatus.padEnd(8, ' ');
+            
+            text += `${addrPart} | ${balPart} | ${verPart} | ${priv}\n`;
+        }
+        display.textContent = text;
+    }
+}
+
+db.ref('blockchain').on('value', s => {
+    const d = s.val();
+    if (d && d.chain) { 
+        bc.sync(d); 
+        // We call refreshUI but don't 'await' it here to prevent the freeze
+        refreshUI(); 
+    } 
+    else { initGenesis(); }
+});
