@@ -133,7 +133,7 @@ function refreshUI() {
     bc.recalculateBalances();
     // Balances
     let bView = "ADDR | BAL\n---\n";
-    Object.keys(bc.balances).forEach(a => { if(bc.balances[a]>0) bView += `${a.substring(0,8)} | ${bc.balances[a].toFixed(2)}\n`});
+    Object.keys(bc.balances).forEach(a => { if(bc.balances[a]>0) bView += `${a} | ${bc.balances[a].toFixed(2)}\n`});
     document.getElementById('balances-view').textContent = bView || "(No balances)";
 
     // Mempool (Privacy Logic)
