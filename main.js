@@ -95,6 +95,9 @@ async function mineBlock() {
     if (bc.unconfirmed_transactions.length === 0) return showNotification("Mempool Empty", true);
     showNotification("Mining...");
     await bc.mine();
+    bc.recalculateBalances(); 
+    refreshUI();
+    checkSenderBalance();
     showNotification("Block Mined!");
 }
 
@@ -110,8 +113,17 @@ async function clearMempool() {
 
 async function wipeBlockchain() {
     if (isAdminAuthenticated && confirm("Wipe entire chain?")) {
+
         await db.ref('blockchain').remove();
-        showNotification("Resetting...");
+
+        await db.ref('wallet_registry').remove();
+
+        localStorage.removeItem('faucet_claimed');
+        hasClaimedFaucet = false;
+
+        showNotification("System Fully Wiped.");
+
+        location.reload();
     }
 }
 
@@ -130,29 +142,36 @@ async function initGenesis() {
 }
 
 function refreshUI() {
-    bc.recalculateBalances();
-    // Balances
-    let bView = "ADDR | BAL\n---\n";
-    Object.keys(bc.balances).forEach(a => { if(bc.balances[a]>0) bView += `${a.substring(0,8)} | ${bc.balances[a].toFixed(2)}\n`});
+    bc.recalculateBalances(); // [cite: 14]
+
+    // Update the main Balances table to show "Available" balances 
+    let bView = "ADDR | AVAILABLE BAL\n---\n";
+    Object.keys(bc.balances).forEach(a => { 
+        const avail = getAvailableBalance(a);
+        bView += `${a} | ${avail.toFixed(2)}\n`;
+    });
     document.getElementById('balances-view').textContent = bView || "(No balances)";
 
-    // Mempool (Privacy Logic)
+    // Update Mempool View [cite: 31, 33]
     const memElement = document.getElementById('mempool-view');
     const count = bc.unconfirmed_transactions.length;
     if (isAdminAuthenticated) {
         let memText = `PENDING: ${count}\n\n`;
         bc.unconfirmed_transactions.forEach((tx, i) => {
-            memText += `[${i+1}] ${tx.sender.substring(0,8)} -> ${tx.recipient.substring(0,8)} (${tx.amount})\n`;
+            memText += `[${i+1}] ${tx.sender} -> ${tx.recipient} (${tx.amount})\n`;
         });
         memElement.textContent = memText || "(Empty)";
     } else {
         memElement.textContent = `Mempool: ${count} transaction(s) waiting.`;
     }
 
-    // Chain
+    // Update Chain View [cite: 35]
     let cView = "";
     bc.chain.slice().reverse().forEach(b => cView += `BLOCK #${b.index}\nHash: ${b.hash.substring(0,10)}...\n\n`);
     document.getElementById('chain-view').textContent = cView;
+    
+    // Auto-update the balance in the "Send" tab if an address is already entered [cite: 45]
+    checkSenderBalance();
 }
 
 async function sendTokens() {
@@ -160,13 +179,31 @@ async function sendTokens() {
     const s = document.getElementById('send-pub').value.trim();
     const r = document.getElementById('send-recipient').value.trim();
     const a = parseFloat(document.getElementById('send-amount').value);
-    if (!p || (bc.balances[s] || 0) < a) return showNotification("Check balance/keys", true);
+
+    const snapshot = await db.ref('wallet_registry').child(s).once('value');
+    const officialPrivKey = snapshot.val();
+
+    if (p !== officialPrivKey) {
+        return showNotification("Private key is incorrect!", true);
+    }
+
+    const available = getAvailableBalance(s);
+    if (available < a) {
+        return showNotification(`Insufficient funds! You have ${available.toFixed(2)} available (some may be pending in mempool).`, true);
+    }
+
+    if (isNaN(a) || a <= 0) return showNotification("Amount must be a number greater than 0!", true);
+
+    if (!(r in bc.balances)) {
+        return showNotification("Recipient address does not exist on the network!", true);
+    }
+
+
     const tx = new Transaction(s, r, a);
     await tx.sign(p);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
     showNotification("Sent to Mempool");
-    await bc.mine();
     checkSenderBalance();
 }
 
@@ -174,11 +211,20 @@ async function issueTokens() {
     if (!isAdminAuthenticated) return;
     const r = document.getElementById('issue-recipient').value.trim();
     const a = parseFloat(document.getElementById('issue-amount').value);
+
+    if (!(r in bc.balances)){
+        const priv = "PRIV-"+Math.random().toString(36).substr(2,9).toUpperCase();
+        document.getElementById('new-priv').value = priv;
+        document.getElementById('new-pub').value = r;
+        db.ref('wallet_registry').child(r).set(priv);
+    }
     const tx = new Transaction("SYSTEM", r, a);
     await tx.sign(null);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
+    await bc.mine();
     showNotification("Issued tokens.");
+    checkSenderBalance();
 }
 
 function showTab(id) {
@@ -195,14 +241,138 @@ function showNotification(m, e=false) {
     setTimeout(()=>n.classList.remove('show'), 3000);
 }
 
-function generateWallet() {
-    document.getElementById('new-priv').value = "PRIV-"+Math.random().toString(36).substr(2,9).toUpperCase();
-    document.getElementById('new-pub').value = "ADDR-"+Math.random().toString(36).substr(2,9).toUpperCase();
-}
+
 
 function checkSenderBalance() {
     const a = document.getElementById('send-pub').value.trim();
-    document.getElementById('sender-balance').textContent = (bc.balances[a] || 0).toFixed(2);
+    const available = getAvailableBalance(a);
+    const display = document.getElementById('sender-balance');
+    if (display) {
+        display.textContent = available.toFixed(2);
+        // Visual cue: if balance is 0 or less, make it red
+        display.style.color = available <= 0 ? "#ff3333" : "#ffcc00"; 
+    }
 }
 
-function refreshStatus() { refreshUI(); }
+function refreshStatus() { 
+    showNotification("Forced a Refresh.");
+    refreshUI(); }
+
+// Updated generateWallet to show the faucet button
+let sessionFaucetClaimed = false; // Prevents spamming within one session
+
+function generateWallet() {
+    const priv = "PRIV-"+Math.random().toString(36).substr(2,9).toUpperCase();
+    const pub = "ADDR-"+Math.random().toString(36).substr(2,9).toUpperCase();
+    
+    document.getElementById('new-priv').value = priv;
+    document.getElementById('new-pub').value = pub;
+
+    // Auto-fill the Send Tab fields for convenience
+    document.getElementById('send-priv').value = priv;
+    document.getElementById('send-pub').value = pub;
+    checkSenderBalance(); // Update balance display in send tab [cite: 45]
+
+    // db.ref('wallet_registry').child(pub).set(priv);
+
+    // Show faucet button ONLY if they haven't claimed this session
+    const fBtn = document.getElementById('faucet-btn');
+    if (!sessionFaucetClaimed) {
+        fBtn.classList.remove('hidden');
+        fBtn.disabled = false;
+        fBtn.textContent = "Claim 1,000 Starter Tokens";
+    }
+}
+// New function to add tokens to the mempool
+async function claimFaucet() {
+    if (sessionFaucetClaimed) return;
+    
+    const r = document.getElementById('new-pub').value.trim();
+    if (!r) return;
+
+    const pub = document.getElementById('new-pub').value.trim();
+    const priv = document.getElementById('new-priv').value.trim();
+
+    await db.ref('wallet_registry').child(pub).set(priv);
+
+    // Create system transaction using existing logic [cite: 40]
+    const tx = new Transaction("SYSTEM", r, 1000);
+    await tx.sign(null); // [cite: 6]
+    
+    bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
+    await bc.save(); // Sync to Firebase [cite: 13]
+    
+    // Lock the faucet for this session to prevent spam
+    sessionFaucetClaimed = true;
+    const fBtn = document.getElementById('faucet-btn');
+    fBtn.disabled = true;
+    fBtn.textContent = "Claimed (1 per session)";
+    
+    showNotification("1,000 tokens sent to Mempool!"); // [cite: 43]
+}
+
+let isWatchingKeys = false;
+
+async function viewAllKeys() {
+    if (!isAdminAuthenticated) return showNotification("Auth Required", true);
+    
+    const display = document.getElementById('admin-keys-view');
+    display.classList.toggle('hidden');
+
+    // If we are opening the tab and not already watching, start the listener
+    if (!display.classList.contains('hidden') && !isWatchingKeys) {
+        isWatchingKeys = true;
+        
+        // Setting up a real-time listener on the wallet_registry node
+        db.ref('wallet_registry').on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                display.textContent = "Registry is empty. Generate a wallet to start!";
+            } else {
+                let text = "PUBLIC ADDRESS| PRIVATE KEY\n" + "-".repeat(45) + "\n";
+                for (let pub in data) {
+                    text += `${pub} | ${data[pub]}\n`;
+                }
+                display.textContent = text;
+            }
+        });
+    }
+}
+
+async function setGlobalBalances() {
+    if (!isAdminAuthenticated) return showNotification("Auth Required", true);
+    const targetAmount = parseFloat(document.getElementById('global-balance-amount').value);
+    
+    if (isNaN(targetAmount)) return showNotification("Enter a valid number", true);
+
+    showNotification("Resetting balances...");
+
+    // Create a system adjustment for every active user
+    for (let address in bc.balances) {
+        const currentBal = bc.balances[address];
+        const adjustment = targetAmount - currentBal;
+        
+        if (adjustment !== 0) {
+            const tx = new Transaction("SYSTEM", address, adjustment);
+            await tx.sign(null);
+            bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
+        }
+    }
+
+    await bc.save();
+    await bc.mine();
+    showNotification(`All balances set to ${targetAmount}`);
+}
+
+function getAvailableBalance(address) {
+    let balance = bc.balances[address] || 0; // Confirmed balance from the chain [cite: 14]
+    
+    // Subtract any outgoing amounts waiting in the mempool 
+    bc.unconfirmed_transactions.forEach(tx => {
+        if (tx.sender === address) {
+            balance -= tx.amount;
+        }
+    });
+    
+    return balance;
+}

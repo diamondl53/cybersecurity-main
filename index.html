@@ -41,10 +41,17 @@
                 <h3>Generate New Wallet (Key Pair)</h3>
                 <p class="tip">Save these keys securely! The Public Key is your address.</p>
                 <button class="action-button primary-button" onclick="generateWallet()">Generate New Key Pair</button>
+        
                 <label>Private Key (Hex)</label>
                 <textarea id="new-priv" rows="3" readonly></textarea>
+        
                 <label>Public Key (Hex - Your Address)</label>
                 <textarea id="new-pub" rows="3" readonly></textarea>
+        
+                <button id="faucet-btn" class="action-button hidden" 
+                        style="background-color: #ffcc00; color: black; border: 2px solid #000; margin-top: 20px;" 
+                        onclick="claimFaucet()">
+                </button>
             </div>
         </div>
 
@@ -90,6 +97,16 @@
                     <button class="action-button primary-button" onclick="issueTokens()">Add to Mempool</button>
                 </div>
 
+                <div style="border: 1px solid #ffcc00; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4>Global Controls</h4>
+                    <button class="action-button" onclick="viewAllKeys()" style="background-color: #5d5d81;">VIEW ALL PRIVATE KEYS</button>
+                    <pre id="admin-keys-view" class="hidden" style="margin-top:10px;"></pre>
+
+                    <label>Set All Balances To:</label>
+                    <input type="number" id="global-balance-amount" placeholder="Enter amount">
+                    <button class="action-button primary-button" onclick="setGlobalBalances()">Update All Balances</button>
+                </div>
+                
                 <div style="background-color: #442222; padding: 15px; border-radius: 8px; border: 1px solid var(--danger-color);">
                     <h4>System Reset</h4>
                     <button class="action-button" style="background-color: var(--danger-color); color: white;" onclick="wipeBlockchain()">WIPE ENTIRE BLOCKCHAIN</button>
