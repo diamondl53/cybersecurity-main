@@ -2,15 +2,12 @@
     --bg-color: #1a1a2e;
     --card-color: #2c2c54;
     --text-color: #f4f4f4;
-    --primary-color: #4CAF50; /* Green for success/action */
-    --hover-color: #61b363;
-    --input-bg: #3e3e68;
+    --primary-color: #4CAF50;
     --border-color: #5d5d81;
-    --danger-color: #ff3333;
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
@@ -29,10 +26,9 @@ h1 {
     color: var(--primary-color);
     border-bottom: 2px solid var(--primary-color);
     padding-bottom: 10px;
-    margin-bottom: 20px;
 }
 
-/* --- Tabs Navigation --- */
+/* --- Tabs --- */
 .tabs {
     display: flex;
     justify-content: center;
@@ -44,25 +40,22 @@ h1 {
     background-color: var(--card-color);
     color: var(--text-color);
     border: none;
-    padding: 12px 20px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    padding-left: 20px;
+    padding-right: 20px;
     cursor: pointer;
-    font-size: 15px;
     border-radius: 8px 8px 0 0;
     margin-right: 5px;
-    transition: background-color 0.3s;
-}
-
-.tab-button:hover:not(.active) {
-    background-color: #3e3e68;
 }
 
 .tab-button.active {
     background-color: var(--primary-color);
-    color: var(--bg-color);
+    color: #1a1a2e;
     font-weight: bold;
 }
 
-/* --- Content Visibility --- */
+/* --- Content Layout --- */
 .tab-content {
     display: none;
 }
@@ -71,11 +64,6 @@ h1 {
     display: block;
 }
 
-.hidden {
-    display: none !important;
-}
-
-/* --- Cards & Grid Layout --- */
 .card-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -86,66 +74,42 @@ h1 {
     background-color: var(--card-color);
     padding: 20px;
     border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
 .full-width {
     grid-column: 1 / -1;
 }
 
-/* --- Forms & Inputs --- */
-label {
-    display: block;
-    margin-top: 15px;
-    font-weight: bold;
-    font-size: 0.85em;
-    color: var(--text-color);
-}
-
-input, textarea {
+/* --- Inputs & Text --- */
+input, 
+textarea {
     width: 100%;
     padding: 10px;
-    margin-top: 5px;
-    background-color: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    background-color: #3e3e68;
     color: white;
-    font-family: 'Courier New', Courier, monospace;
+    border: 1px solid #555;
+    border-radius: 5px;
     box-sizing: border-box;
-    font-size: 0.9em;
 }
 
-input:focus, textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-}
-
-/* --- Buttons --- */
 .action-button {
     width: 100%;
     padding: 12px;
     border: none;
     border-radius: 6px;
-    font-weight: bold;
     cursor: pointer;
-    margin-top: 15px;
-    transition: 0.2s ease;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    font-weight: bold;
+    margin-top: 5px;
 }
 
 .primary-button {
     background-color: var(--primary-color);
-    color: var(--bg-color);
+    color: #1a1a2e;
 }
 
-.primary-button:hover {
-    background-color: var(--hover-color);
-}
-
-/* --- Display Areas (Pre-formatted text) --- */
 pre {
     background: #161625;
     padding: 15px;
@@ -153,40 +117,43 @@ pre {
     font-size: 0.85em;
     max-height: 250px;
     overflow-y: auto;
-    border: 1px dashed var(--border-color);
-    font-family: 'Courier New', Courier, monospace;
-    color: #00ff41; /* "Matrix" green for code views */
+    border-width: 1px;
+    border-style: dashed;
+    border-color: var(--border-color);
+    font-family: monospace;
 }
 
-/* --- Specific UI Elements --- */
+/* --- Utilities --- */
 .tip {
     font-size: 0.8em;
     color: #999;
     font-style: italic;
-    margin-top: 5px;
 }
 
 .balance-info {
-    color: #ffcc00; /* Yellow for attention */
+    color: #ffcc00;
     font-weight: bold;
-    margin: 10px 0;
-    font-size: 1.1em;
 }
 
-/* --- Notifications --- */
+.hidden {
+    display: none !important;
+}
+
+/* --- Alerts --- */
 #notification {
     position: fixed;
     bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
-    padding: 15px 30px;
+    padding-top: 15px;
+    padding-bottom: 15px;
+    padding-left: 30px;
+    padding-right: 30px;
     border-radius: 8px;
     z-index: 9999;
     opacity: 0;
-    transition: opacity 0.5s, transform 0.5s;
+    transition: 0.5s;
     pointer-events: none;
-    font-weight: bold;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
 }
 
 #notification.show {
@@ -199,13 +166,6 @@ pre {
 }
 
 #notification.error {
-    background: var(--danger-color);
+    background: #ff3333;
     color: white;
-}
-
-/* --- Responsive Adjustments --- */
-@media (max-width: 768px) {
-    .card-grid {
-        grid-template-columns: 1fr;
-    }
 }

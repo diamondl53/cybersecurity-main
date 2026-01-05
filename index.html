@@ -21,12 +21,12 @@
             <div class="card-grid">
                 <div class="card full-width">
                     <h3>Current Balances</h3>
-                    <pre id="balances-view">Connecting to Network...</pre>
+                    <pre id="balances-view">Connecting...</pre>
                 </div>
                 <div class="card">
                     <h3>Mempool (Pending TX)</h3>
                     <pre id="mempool-view">(Empty)</pre>
-                    <p class="tip">Waiting for Admin to mine next block...</p>
+                    <p class="tip">Admin login required to view specific transaction details.</p>
                 </div>
                 <div class="card">
                     <h3>Blockchain (Blocks)</h3>
@@ -38,72 +38,59 @@
 
         <div id="wallet" class="tab-content">
             <div class="card full-width">
-                <h3>Generate New Wallet (Key Pair)</h3>
-                <p class="tip">Save these keys! The Private Key signs transactions; the Public Address receives them.</p>
-                <button class="action-button primary-button" onclick="generateWallet()">Generate New Key Pair</button>
-                <label>Private Key</label>
-                <textarea id="new-priv" rows="2" readonly></textarea>
-                <label>Public Address</label>
-                <textarea id="new-pub" rows="2" readonly></textarea>
+                <h3>Generate Wallet</h3>
+                <button class="action-button primary-button" onclick="generateWallet()">New Key Pair</button>
+                <textarea id="new-priv" placeholder="Private Key" rows="2" readonly></textarea>
+                <textarea id="new-pub" placeholder="Public Address" rows="2" readonly></textarea>
             </div>
         </div>
 
         <div id="send" class="tab-content">
             <div class="card full-width">
-                <h3>Create & Send Signed Transaction</h3>
-                <label>Your Private Key</label>
-                <textarea id="send-priv" rows="2"></textarea>
-                <label>Your Public Address</label>
-                <textarea id="send-pub" rows="2" oninput="checkSenderBalance()"></textarea>
-                <p class="balance-info">Available Balance: <span id="sender-balance">0.00</span></p>
-                <label>Recipient Address</label>
-                <textarea id="send-recipient" rows="2"></textarea>
-                <label>Amount</label>
-                <input type="number" id="send-amount" min="0.01" step="0.01">
+                <h3>Send Tokens</h3>
+                <textarea id="send-priv" placeholder="Your Private Key" rows="2"></textarea>
+                <textarea id="send-pub" placeholder="Your Address" rows="2" oninput="checkSenderBalance()"></textarea>
+                <p class="balance-info">Balance: <span id="sender-balance">0.00</span></p>
+                <textarea id="send-recipient" placeholder="Recipient Address" rows="2"></textarea>
+                <input type="number" id="send-amount" placeholder="Amount" step="0.01">
                 <button class="action-button primary-button" onclick="sendTokens()">Sign & Send</button>
             </div>
         </div>
 
         <div id="issue" class="tab-content">
-            <div class="card full-width" id="admin-login-section">
-                <h3>Admin Authentication</h3>
-                <p class="tip">Enter password to access mining and system controls.</p>
-                <input type="password" id="admin-pass-input" placeholder="Admin Password">
-                <button class="action-button primary-button" onclick="unlockSystem()">Unlock System</button>
+            <div id="admin-login-section" class="card full-width">
+                <h3>Admin Login</h3>
+                <input type="password" id="admin-pass-input" placeholder="Password">
+                <button class="action-button primary-button" onclick="unlockSystem()">Login</button>
             </div>
-
-            <div class="card full-width hidden" id="admin-controls-section">
-                <h3 style="color: #4CAF50;">ADMIN CONTROLS UNLOCKED</h3>
+            
+            <div id="admin-controls-section" class="card full-width hidden">
+                <h3 style="color: #4CAF50;">ADMIN UNLOCKED</h3>
                 
                 <div style="border: 1px solid var(--primary-color); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h4>1. Network Mining</h4>
-                    <p class="tip">Process all unconfirmed transactions into a new block.</p>
+                    <h4>Network Management</h4>
                     <button class="action-button primary-button" onclick="mineBlock()">MINE NEW BLOCK</button>
+                    <button class="action-button" style="background-color: #6c757d; color: white;" onclick="clearMempool()">CLEAR PENDING MEMPOOL</button>
                 </div>
 
                 <div style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <h4>2. Issue System Tokens</h4>
-                    <label>Recipient Address</label>
-                    <textarea id="issue-recipient" rows="2"></textarea>
-                    <label>Amount</label>
-                    <input type="number" id="issue-amount" min="0.01" step="0.01">
-                    <button class="action-button primary-button" onclick="issueTokens()">Inject Tokens</button>
+                    <h4>System Issue</h4>
+                    <textarea id="issue-recipient" placeholder="Recipient Address" rows="2"></textarea>
+                    <input type="number" id="issue-amount" placeholder="Amount">
+                    <button class="action-button primary-button" onclick="issueTokens()">Issue Tokens</button>
                 </div>
 
                 <div style="background-color: #442222; padding: 15px; border-radius: 8px; border: 1px solid #ff3333;">
-                    <h4>3. Danger Zone</h4>
-                    <p>Wiping the chain deletes all history and resets everyone to zero.</p>
-                    <button class="action-button" style="background-color: #ff3333; color: white;" onclick="wipeBlockchain()">WIPE ENTIRE BLOCKCHAIN</button>
+                    <h4>Danger Zone</h4>
+                    <button class="action-button" style="background: #ff3333; color: white;" onclick="wipeBlockchain()">WIPE ENTIRE CHAIN</button>
                 </div>
             </div>
         </div>
 
-        <div id="notification" class="hidden"></div>
+        <div id="notification"></div>
     </div>
-   
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    
     <script src="main.js"></script>
 </body>
 </html>
