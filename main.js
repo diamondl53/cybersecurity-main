@@ -201,7 +201,7 @@ async function sendTokens() {
     const recipient = document.getElementById('send-recipient').value.trim();
     const amount = parseFloat(document.getElementById('send-amount').value);
 
-    if (!priv || (bc.balances[sender] || 0) > amount) {
+    if (!priv || (bc.balances[sender] || 0) < amount) {
         return showNotification("Invalid Keys or Insufficient Funds", true);
     }
 
@@ -210,6 +210,7 @@ async function sendTokens() {
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
     showNotification("Transaction sent to Mempool!");
+    const block = await bc.mine();
 }
 
 async function issueTokens() {
