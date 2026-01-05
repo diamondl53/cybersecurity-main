@@ -1,4 +1,6 @@
-// 1. Firebase Configuration
+// --- CONFIGURATION ---
+const ADMIN_PASSWORD = "ADMIN1234"; 
+
 const firebaseConfig = {
     apiKey: "AIzaSyAMyTn2KYF9A5pd4FsDjYoOMVzZiGDS5mw",
     authDomain: "cybersecurity-24e2f.firebaseapp.com",
@@ -28,7 +30,7 @@ async function sha256(data) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// --- BLOCKCHAIN CLASSES ---
+// --- BLOCKCHAIN LOGIC ---
 class Transaction {
     constructor(sender, recipient, amount, signature = "") {
         this.sender = sender;
@@ -36,12 +38,9 @@ class Transaction {
         this.amount = parseFloat(amount);
         this.signature = signature;
     }
-    message() {
-        return stringify({sender: this.sender, recipient: this.recipient, amount: this.amount});
-    }
     async sign(privateKey) {
         if (this.sender === 'SYSTEM') this.signature = "SYSTEM_TX_NO_SIGNATURE";
-        else this.signature = await sha256(privateKey + this.message());
+        else this.signature = await sha256(privateKey + stringify({sender: this.sender, recipient: this.recipient, amount: this.amount}));
     }
 }
 
@@ -55,14 +54,13 @@ class Block {
         this.hash = "";
     }
     async computeHash() {
-        const blockString = stringify({
+        return await sha256(stringify({
             index: this.index,
             transactions: this.transactions,
             timestamp: this.timestamp,
             previous_hash: this.previous_hash,
             nonce: this.nonce
-        });
-        return await sha256(blockString);
+        }));
     }
 }
 
@@ -81,14 +79,10 @@ class Blockchain {
     }
 
     async save() {
-        try {
-            await db.ref('blockchain').set({
-                chain: this.chain,
-                unconfirmed_transactions: this.unconfirmed_transactions
-            });
-        } catch (e) {
-            showNotification("Firebase Save Error: " + e.message, true);
-        }
+        await db.ref('blockchain').set({
+            chain: this.chain,
+            unconfirmed_transactions: this.unconfirmed_transactions
+        });
     }
 
     recalculateBalances() {
@@ -96,9 +90,7 @@ class Blockchain {
         this.chain.forEach(block => {
             if (block.transactions) {
                 block.transactions.forEach(tx => {
-                    if (tx.sender !== "SYSTEM") {
-                        this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
-                    }
+                    if (tx.sender !== "SYSTEM") this.balances[tx.sender] = (this.balances[tx.sender] || 0) - tx.amount;
                     this.balances[tx.recipient] = (this.balances[tx.recipient] || 0) + tx.amount;
                 });
             }
@@ -107,26 +99,17 @@ class Blockchain {
 
     async mine() {
         if (this.unconfirmed_transactions.length === 0) return null;
-
         const lastBlock = this.chain[this.chain.length - 1];
-        const newBlock = new Block(
-            this.chain.length,
-            this.unconfirmed_transactions,
-            lastBlock ? lastBlock.hash : "0"
-        );
-
-        // PoW Loop
+        const newBlock = new Block(this.chain.length, this.unconfirmed_transactions, lastBlock.hash);
+        
         const target = "0".repeat(this.difficulty);
-        let computed = "";
         while (true) {
-            computed = await newBlock.computeHash();
-            if (computed.startsWith(target)) break;
+            newBlock.hash = await newBlock.computeHash();
+            if (newBlock.hash.startsWith(target)) break;
             newBlock.nonce++;
-            if (newBlock.nonce > 100000) break; // Safety break
         }
         
-        newBlock.hash = computed;
-        this.chain.push(JSON.parse(JSON.stringify(newBlock))); // Clean object for Firebase
+        this.chain.push(JSON.parse(JSON.stringify(newBlock)));
         this.unconfirmed_transactions = [];
         await this.save();
         return newBlock;
@@ -135,23 +118,18 @@ class Blockchain {
 
 const bc = new Blockchain();
 
-// --- CONNECTION LISTENER ---
+// --- DATABASE LISTENERS ---
 db.ref('blockchain').on('value', (snapshot) => {
     const data = snapshot.val();
     if (data && data.chain) {
         bc.sync(data);
         refreshUI();
     } else {
-        // If the DB is totally empty, create the very first block
         initGenesis();
     }
-}, (error) => {
-    showNotification("Database Connection Failed!", true);
-    console.error(error);
 });
 
 async function initGenesis() {
-    console.log("Initializing Genesis...");
     const genesis = new Block(0, [], "0", 0, 1704067200);
     genesis.hash = await genesis.computeHash();
     bc.chain = [JSON.parse(JSON.stringify(genesis))];
@@ -159,39 +137,23 @@ async function initGenesis() {
     await bc.save();
 }
 
-// --- UI UPDATES ---
-function refreshUI() {
-    bc.recalculateBalances();
-    
-    // Update Balances
-    let balView = document.getElementById('balances-view');
-    let balText = 'Address | Balance\n' + '-'.repeat(30) + '\n';
-    let hasBal = false;
-    Object.keys(bc.balances).forEach(addr => {
-        if (bc.balances[addr] > 0) {
-            balText += `${addr.substring(0,10)}... | ${bc.balances[addr].toFixed(2)}\n`;
-            hasBal = true;
-        }
-    });
-    balView.textContent = hasBal ? balText : "(No balances yet)";
+// --- SYSTEM & ADMIN FUNCTIONS ---
+function unlockSystem() {
+    if (document.getElementById('admin-pass-input').value === ADMIN_PASSWORD) {
+        document.getElementById('admin-login-section').classList.add('hidden');
+        document.getElementById('admin-controls-section').classList.remove('hidden');
+        showNotification("Admin access granted.");
+    } else {
+        showNotification("Incorrect password!", true);
+    }
+}
 
-    // Update Mempool
-    let memView = document.getElementById('mempool-view');
-    let memText = "";
-    bc.unconfirmed_transactions.forEach(tx => {
-        memText += `${tx.sender.substring(0,8)} -> ${tx.recipient.substring(0,8)} [${tx.amount}]\n`;
-    });
-    memView.textContent = memText || "(Mempool Empty)";
-
-    // Update Chain
-    let chainView = document.getElementById('chain-view');
-    let chainText = "";
-    bc.chain.slice().reverse().forEach(block => {
-        chainText += `BLOCK #${block.index}\nHash: ${block.hash.substring(0,12)}...\nTXs: ${block.transactions ? block.transactions.length : 0}\n\n`;
-    });
-    chainView.textContent = chainText;
-    
-    checkSenderBalance();
+async function wipeBlockchain() {
+    if (!confirm("DELETE EVERYTHING FOREVER?")) return;
+    showNotification("Wiping network...");
+    await db.ref('blockchain').remove();
+    await initGenesis();
+    showNotification("Network reset complete.");
 }
 
 // --- ACTION FUNCTIONS ---
@@ -201,42 +163,65 @@ async function sendTokens() {
     const recipient = document.getElementById('send-recipient').value.trim();
     const amount = parseFloat(document.getElementById('send-amount').value);
 
-    if (!priv || (bc.balances[sender] || 0) > amount) {
-        return showNotification("Invalid Keys or Insufficient Funds", true);
-    }
+    if (!priv || (bc.balances[sender] || 0) < amount) return showNotification("Check balance/keys", true);
 
     const tx = new Transaction(sender, recipient, amount);
     await tx.sign(priv);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
-    showNotification("Transaction sent to Mempool!");
+    showNotification("Transaction pending in Mempool.");
 }
 
 async function issueTokens() {
     const recipient = document.getElementById('issue-recipient').value.trim();
     const amount = parseFloat(document.getElementById('issue-amount').value);
-    if (!recipient || isNaN(amount)) return showNotification("Check inputs", true);
-
     const tx = new Transaction("SYSTEM", recipient, amount);
     await tx.sign(null);
     bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
     await bc.save();
-    showNotification("System Tokens Issued!");
+    showNotification("Tokens issued by System.");
 }
 
 async function mineBlock() {
-    if (bc.unconfirmed_transactions.length === 0) {
-        return showNotification("Nothing to mine!", true);
-    }
-    showNotification("Mining block... stay on this page.");
+    if (bc.unconfirmed_transactions.length === 0) return showNotification("No transactions to mine!", true);
+    showNotification("Mining block...");
     const block = await bc.mine();
     if (block) showNotification("Success! Block #" + block.index + " mined.");
 }
 
-// --- TAB & WALLET LOGIC ---
+// --- UI UTILS ---
+function refreshUI() {
+    bc.recalculateBalances();
+    
+    let balText = 'Address | Balance\n' + '-'.repeat(30) + '\n';
+    Object.keys(bc.balances).forEach(addr => {
+        if (bc.balances[addr] > 0) balText += `${addr.substring(0,10)}... | ${bc.balances[addr].toFixed(2)}\n`;
+    });
+    document.getElementById('balances-view').textContent = balText || "(No balances)";
+
+    let memText = "";
+    bc.unconfirmed_transactions.forEach(tx => {
+        memText += `${tx.sender.substring(0,8)} -> ${tx.recipient.substring(0,8)} [${tx.amount}]\n`;
+    });
+    document.getElementById('mempool-view').textContent = memText || "(Empty)";
+
+    let chainText = "";
+    bc.chain.slice().reverse().forEach(block => {
+        chainText += `BLOCK #${block.index}\nHash: ${block.hash.substring(0,12)}...\n\n`;
+    });
+    document.getElementById('chain-view').textContent = chainText;
+}
+
 function showTab(id) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+    
+    if (id !== 'issue') {
+        document.getElementById('admin-login-section').classList.remove('hidden');
+        document.getElementById('admin-controls-section').classList.add('hidden');
+        document.getElementById('admin-pass-input').value = "";
+    }
+
     document.getElementById(id).classList.add('active');
     event.currentTarget.classList.add('active');
 }
@@ -248,19 +233,11 @@ function showNotification(msg, isErr = false) {
     setTimeout(() => n.classList.remove('show'), 3000);
 }
 
-function checkSenderBalance() {
-    const addr = document.getElementById('send-pub').value.trim();
-    document.getElementById('sender-balance').textContent = (bc.balances[addr] || 0).toFixed(2);
-}
-
-async function generateWallet() {
+function generateWallet() {
     const priv = `PRIV-${Math.random().toString(36).substring(2).toUpperCase()}`;
     const pub = `ADDR-${crypto.randomUUID().replaceAll('-', '').substring(0,12).toUpperCase()}`;
     document.getElementById('new-priv').value = priv;
     document.getElementById('new-pub').value = pub;
 }
 
-function refreshStatus() {
-    refreshUI();
-    showNotification("Manual Refresh Complete");
-}
+function refreshStatus() { refreshUI(); showNotification("Refreshed."); }
