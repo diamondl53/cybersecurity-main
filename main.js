@@ -179,32 +179,42 @@ async function sendTokens() {
     const s = document.getElementById('send-pub').value.trim();
     const r = document.getElementById('send-recipient').value.trim();
     const a = parseFloat(document.getElementById('send-amount').value);
-
-    const snapshot = await db.ref('wallet_registry').child(s).once('value');
-    const officialPrivKey = snapshot.val();
-
-    if (p !== officialPrivKey) {
-        return showNotification("Private key is incorrect!", true);
+    if (!p || !s || !r || isNaN(a)) {
+        return showNotification("Error: All fields (Private Key, Sender, Recipient, Amount) must be filled!", true);
     }
 
-    const available = getAvailableBalance(s);
-    if (available < a) {
-        return showNotification(`Insufficient funds! You have ${available.toFixed(2)} available (some may be pending in mempool).`, true);
+    try {
+
+        const snapshot = await db.ref('wallet_registry').child(s).once('value');
+        const officialPrivKey = snapshot.val();
+
+        if (!(r in bc.balances)) {
+            return showNotification("Recipient address does not exist on the network!", true);
+        }
+
+        if (p !== officialPrivKey) {
+            return showNotification("Private key is incorrect!", true);
+        }
+
+        const available = getAvailableBalance(s);
+        
+        if (available < a) {
+            return showNotification(`Insufficient funds! You have ${available.toFixed(2)} available (some may be pending in mempool).`, true);
+        }
+
+        if (a <= 0) return showNotification("Amount must be a number greater than 0!", true);
+
+        const tx = new Transaction(s, r, a);
+        await tx.sign(p);
+        bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
+        await bc.save();
+        showNotification("Sent to Mempool");
+        refreshUI();
     }
-
-    if (isNaN(a) || a <= 0) return showNotification("Amount must be a number greater than 0!", true);
-
-    if (!(r in bc.balances)) {
-        return showNotification("Recipient address does not exist on the network!", true);
+    catch (error) {
+        console.error("Firebase Error:", error);
+        showNotification("Database communication error.", true);
     }
-
-
-    const tx = new Transaction(s, r, a);
-    await tx.sign(p);
-    bc.unconfirmed_transactions.push(JSON.parse(JSON.stringify(tx)));
-    await bc.save();
-    showNotification("Sent to Mempool");
-    checkSenderBalance();
 }
 
 async function issueTokens() {
@@ -370,7 +380,7 @@ function getAvailableBalance(address) {
     // Subtract any outgoing amounts waiting in the mempool 
     bc.unconfirmed_transactions.forEach(tx => {
         if (tx.sender === address) {
-            balance -= tx.amount;
+            balance = balance - tx.amount;
         }
     });
     
