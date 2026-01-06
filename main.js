@@ -271,7 +271,7 @@ async function issueTokens() {
     const r = document.getElementById('issue-recipient').value.trim();
     const a = parseFloat(document.getElementById('issue-amount').value);
 
-    if (isNaN(a) || a <= 0) return showNotification("Invalid amount", true);
+    if (isNaN(a)) return showNotification("Invalid amount", true);
 
     // 1. If recipient is new, register them with a key and verify them
     const snapshot = await db.ref('wallet_registry').child(r).once('value');
